@@ -235,62 +235,13 @@ internal sealed class EngineClassesBindingsDataCollector : BindingsDataCollector
                 continue;
             }
 
-            var method = new MethodInfo(NamingUtils.SnakeToPascalCase(engineMethod.Name))
+            try
             {
-                VisibilityAttributes = VisibilityAttributes.Public,
-                IsStatic = engineMethod.IsStatic,
-            };
-            AddEngineClassMethodByEngineName(type, engineMethod.Name, method);
-
-            if (engineMethod.ReturnValue is not null)
-            {
-                var returnType = context.TypeDB.GetTypeFromEngineName(engineMethod.ReturnValue.Type, engineMethod.ReturnValue.Meta);
-                method.ReturnParameter = ReturnInfo.FromType(returnType);
+                PopulateEngineClassMethod(context, engineMethod, type, virtualMethods);
             }
-
-            if (engineMethod.IsVirtual)
+            catch (Exception e)
             {
-                method.ContractAttributes = ContractAttributes.Virtual;
-                method.VisibilityAttributes = VisibilityAttributes.Family;
-                virtualMethods.Add((method, engineMethod));
-            }
-            else
-            {
-                method.Body = new CallMethodBind(method, engineMethod, context.TypeDB);
-            }
-
-            foreach (var arg in engineMethod.Arguments)
-            {
-                string argName = NamingUtils.SnakeToCamelCase(arg.Name);
-                var argType = context.TypeDB.GetTypeFromEngineName(arg.Type, arg.Meta);
-                var parameter = new ParameterInfo(argName, argType);
-                context.ApplyDefaultValue(arg, parameter);
-                method.Parameters.Add(parameter);
-            }
-
-            if (engineMethod.IsVararg)
-            {
-                var parameter = new ParameterInfo("args", KnownTypes.SystemReadOnlySpanOf(KnownTypes.GodotVariant))
-                {
-                    ScopedKind = ScopedKind.ScopedRef,
-                    DefaultValue = "default",
-                };
-                method.Parameters.Add(parameter);
-
-                method.Body = new CallMethodBindVararg(method, engineMethod, context.TypeDB);
-            }
-
-            type.DeclaredMethods.Add(method);
-
-            // Only non-virtual methods have a MethodBind to call.
-            if (!engineMethod.IsVirtual)
-            {
-                type.DeclaredFields.Add(new FieldInfo($"_{method.Name}_MethodBind", KnownTypes.SystemVoidPtr)
-                {
-                    VisibilityAttributes = VisibilityAttributes.Private,
-                    IsStatic = true,
-                    RequiresUnsafeCode = true,
-                });
+                Console.WriteLine($"PopulateEngineClassMethod exception {engineClass.Name}::{engineMethod.Name} \n{e}" );
             }
         }
 
@@ -309,6 +260,68 @@ internal sealed class EngineClassesBindingsDataCollector : BindingsDataCollector
             };
 
             type.DeclaredMethods.Add(registerVirtualOverridesMethod);
+        }
+    }
+
+    private void PopulateEngineClassMethod(BindingsData.CollectionContext context, GodotMethodInfo engineMethod, TypeInfo type, List<(MethodInfo Method, GodotMethodInfo GodotMethod)> virtualMethods)
+    {
+        var method = new MethodInfo(NamingUtils.SnakeToPascalCase(engineMethod.Name))
+        {
+            VisibilityAttributes = VisibilityAttributes.Public,
+            IsStatic = engineMethod.IsStatic,
+        };
+        AddEngineClassMethodByEngineName(type, engineMethod.Name, method);
+
+        if (engineMethod.ReturnValue is not null)
+        {
+            var returnType =
+                context.TypeDB.GetTypeFromEngineName(engineMethod.ReturnValue.Type, engineMethod.ReturnValue.Meta);
+            method.ReturnParameter = ReturnInfo.FromType(returnType);
+        }
+
+        if (engineMethod.IsVirtual)
+        {
+            method.ContractAttributes = ContractAttributes.Virtual;
+            method.VisibilityAttributes = VisibilityAttributes.Family;
+            virtualMethods.Add((method, engineMethod));
+        }
+        else
+        {
+            method.Body = new CallMethodBind(method, engineMethod, context.TypeDB);
+        }
+
+        foreach (var arg in engineMethod.Arguments)
+        {
+            string argName = NamingUtils.SnakeToCamelCase(arg.Name);
+            var argType = context.TypeDB.GetTypeFromEngineName(arg.Type, arg.Meta);
+            var parameter = new ParameterInfo(argName, argType);
+            context.ApplyDefaultValue(arg, parameter);
+            method.Parameters.Add(parameter);
+        }
+
+        if (engineMethod.IsVararg)
+        {
+            var parameter = new ParameterInfo("args", KnownTypes.SystemReadOnlySpanOf(KnownTypes.GodotVariant))
+            {
+                ScopedKind = ScopedKind.ScopedRef,
+                DefaultValue = "default",
+            };
+            method.Parameters.Add(parameter);
+
+            method.Body = new CallMethodBindVararg(method, engineMethod, context.TypeDB);
+        }
+
+        type.DeclaredMethods.Add(method);
+
+        // Only non-virtual methods have a MethodBind to call.
+        if (!engineMethod.IsVirtual)
+        {
+            type.DeclaredFields.Add(new FieldInfo($"_{method.Name}_MethodBind", KnownTypes.SystemVoidPtr)
+            {
+                VisibilityAttributes = VisibilityAttributes.Private,
+                IsStatic = true,
+                RequiresUnsafeCode = true,
+            });
         }
     }
 
